@@ -1,0 +1,28 @@
+---
+title: "Practical Machine Learning Project"
+author: "Pei Wang"
+date: "April 19, 2015"
+output: html_document
+---
+
+# Project background
+
+# Data preprocessing
+
+## Remove near zero values and NAs
+The original data set consists of a lot of blank entries and NA entries. Those columns have little use for prediction, so I first identified them by using `nearZeroVar()` and `is.na()` function. Those columns are removed:
+*101 in total*
+
+## Remove improper columns
+In the original data set, those columns
+
+<img class=center src=./fig/improper.png height=450>
+
+
+
+
+
+
+
+
+
