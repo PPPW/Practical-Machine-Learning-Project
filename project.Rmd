@@ -7,17 +7,91 @@ output: html_document
 
 # Project background
 
-# Data preprocessing
+# Model details
+
+## Load data
+You can download the data as local files and use read.csv() to load them, or load from url directly:
+```{r}
+data <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+```
 
 ## Remove near zero values and NAs
-The original data set consists of a lot of blank entries and NA entries. Those columns have little use for prediction, so I first identified them by using `nearZeroVar()` and `is.na()` function. Those columns are removed:
+The original data set consists of a lot of blank entries and NA entries. Those columns have little use for prediction, so I first identified them by using `nearZeroVar()` and `is.na()` function:
+
+```{r}
+nearZeroIndx <- nearZeroVar(data, saveMetrics=TRUE)
+dataNo0 <- data[,!nearZeroIndx$nzv]
+dataNo0NA <- dataNo0[, !is.na(dataNo0[1,])]
+```
+
+Those columns are removed:
 *101 in total*
 
-## Remove improper columns
-In the original data set, those columns
+The `X` column is removed as well, because it's 100% correlated with the `classe`, but this is only an artifact due to the experiment design and data arrangement, it is meaningless to be used as a predictor.
 
+```{r}
+data <- subset(data, select=-X)
+test <- subset(test, select=-X)
+```
+
+## Partition the data for cross validation
+Here I use 60% of the data as training set, 40% as testing set, and using random sampling for partition:
+
+```{r}
+set.seed(975)
+inTrain = createDataPartition(dataNo0NA$classe, p = 0.6)[[1]]
+training = dataNo0NA[ inTrain,]
+testing = dataNo0NA[-inTrain,]
+```
+
+## Use random forest 
+We can apply the random forest model: 
+
+```{r}
+modFit <- randomForest(classe~., data = training)
+modFit
+confusionMatrix(testing$classe, predict(modFit,testing))
+```
+
+The accuracy is 99.85% for training set and 99.86% for testing set. We can check the variable importance:
+
+```{r}
+impor <- varImp(modFit)
+impor[order(-impor$Overall), ,drop=FALSE]
+```
+
+The top two, `cvtd_timestamp` and `raw_timestamp_part_1` have suspiciously high overall importance. 
+
+This figure plotted them versus their index, colored by the five classes:
 <img class=center src=./fig/improper.png height=450>
 
+Although we are allowed to use these columns as features to predict, and these features will certainly make the prediction very accurate, it will be good to not use them, because it is 
+
+```{r}
+trainingF <- subset(training, select=-c(X,cvtd_timestamp,raw_timestamp_part_1,raw_timestamp_part_2))
+testingF <- subset(testing, select=-c(X,cvtd_timestamp,raw_timestamp_part_1,raw_timestamp_part_2))
+```
+
+After removing those features, use random forest model again, the accuracy is 99.64% for training data and 99.6% for testing data. In this run, `num_window` and `roll_belt` are the most important variable, and they have physical meanings and are not artificial.
+
+## Use boosting
+If I use boosting as follows:
+
+```{r}
+modFitB <- train(classe~., method="gbm",data = trainingS,verbose=FALSE)
+```
+
+Then the accuracy is 99.23% for training data and 98.43% for testing data. This method takes a long time to train but the result is not as accurate as the random forest model.
+
+## Other models
+Other models, like decision trees, combined models do not give better prediction accuracy than random forest. So I adopt random forest as my final model.
+
+# Use model to predict test data set
+
+Finally apply the random forest model on the test data set `test`(with problem ids). Notice that some features have different variable type as training data, such as: `magnet_dumbbell_z`,`magnet_forearm_y`,`magnet_forearm_z`, and `cvtd_timestamp`. We need to convert them to the same type then apply our model to predict. 
+
+The result shows that using random forest on the whole set of data (corresponding to the `modFit`), and using random forest on selected features of data (corresponding to the `modFitS`), yield the same prediction result on the `test` data set. 
 
 
 
