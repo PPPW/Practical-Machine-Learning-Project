@@ -1,0 +1,112 @@
+---
+title: "Practical Machine Learning Project"
+author: "Pei Wang"
+date: "April 19, 2015"
+output: html_document
+---
+
+# Project background
+This project is to recognize the common mistakes in the Unilateral Dumbbell Biceps Curl, by using machine learning predictions from data collected by inertia censors on human bodies. The data set is provided by ...
+
+In the data set, four inertial measurement units (IMU) are placed on belt, arm, forearm and dumbbell, providing three-axes acceleration, gyroscope and magnetometer data. Participants were asked to perform five different weight lifting movements, labeled by variable `classe`, from A to E. All other features are allowed to be used as predictors. 
+
+# Model details
+
+## Load data
+The data set can be downloaded and saved as local files, and use `read.csv()` to load it:
+```{r eval = FALSE}
+data <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv")
+```
+
+## Remove near zero values and NAs
+The original data set consists of a lot of blank entries and NA entries. Those columns are not qualified as predictors, and need to be removed. They can be identified by using `nearZeroVar()` and `is.na()` function:
+
+```{r eval = FALSE}
+nearZeroIndx <- nearZeroVar(data, saveMetrics=TRUE)
+dataNo0 <- data[,!nearZeroIndx$nzv]
+dataNo0NA <- dataNo0[, !is.na(dataNo0[1,])]
+```
+
+101 colunms are removed in total. 
+
+Besides this, column `X` is removed as well, because it's 100% correlated with the `classe`, but this is only an artifact due to the experiment design and data arrangement, it is not a proper predictor. Actually, if `X` is not removed, you will always get 100% accuracy in your prediction. 
+
+```{r eval = FALSE}
+dataNo0NA <- subset(dataNo0NA, select=-X)
+```
+
+At this point, each data set has 59 colunms.
+
+## Partition the data for cross validation
+Here I use 60% of the data as training set (11776 samples), 20% as testing set (3923 samples), 20% as the validation set (3923 samples), and using random sampling for partition:
+
+```{r eval = FALSE}
+set.seed(800)
+inTrain = createDataPartition(dataNo0NA$classe, p = 0.6)[[1]]
+training = dataNo0NA[inTrain,]
+inTest = createDataPartition(dataNo0NA[-inTrain,]$classe, p = 0.5)[[1]]
+testing = dataNo0NA[-inTrain,][inTest,]
+validation = dataNo0NA[-inTrain,][-inTest,]
+```
+
+## Use random forest 
+We first try the random forest model: 
+
+```{r eval = FALSE}
+modFit <- randomForest(classe~., data = training)
+```
+
+The accuracy is 100% for training set and 99.64% for testing set. We can check the variable importance:
+
+```{r eval = FALSE}
+impor <- varImp(modFit)
+impor[order(-impor$Overall), ,drop=FALSE]
+```
+
+The two most important variables, `cvtd_timestamp` and `raw_timestamp_part_1` have suspiciously high overall importance. 
+
+This figure plotted the top four most important variables versus their index, colored by the five classes:
+<img class=center src=./fig/improper.png height=450>
+
+Although we are allowed to use these columns as features to predict, and these features  predict very accurately on `data`, it will be good to not use them, because high accuracy is caused by the experiment design, where volunteers are asked to perform the five movements in time order. If they are asked to move in random time order, these time information will have much less prediction power, but the physical data collected from the sensors will always have the same prediction power.
+
+```{r eval = FALSE}
+trainingS <- subset(training, select=-c(X,cvtd_timestamp,raw_timestamp_part_1,raw_timestamp_part_2))
+testingS <- subset(testing, select=-c(X,cvtd_timestamp,raw_timestamp_part_1,raw_timestamp_part_2))
+```
+
+After removing those features, I run random forest model again, the accuracy is 100% for training data and 99.44% for testing data. In this run, `num_window` and `roll_belt` are the most important variables, they both have physical meanings so they are not artificial.
+
+## Use boosting
+We can also try boosting:
+
+```{r eval = FALSE}
+modFitB <- train(classe~., method="gbm",data = trainingS,verbose=FALSE)
+```
+
+Then the accuracy is 99.23% for training data and 98.43% for testing data. This method takes a long time to train, but the result is not as good as the random forest model.
+
+## Use linear discriminant analysis
+```{r eval = FALSE}
+modFitlda <- train(classe~., method="lda",data = trainingS)
+```
+
+Then the accuracy is 74.62% for training data and 74.92% for testing data. 
+
+## Other models
+Other models, like decision trees, combined models (using random forest or boosting to combine) do not give better prediction accuracy than random forest. For each different kind of model, I ran ten times with different seeds, and caclulated the average accuracy on testing set, then finally tested the best model on the validation set. The random forest model gives the best performs among all the models.
+
+# Use model to predict test data set
+
+Finally apply the random forest model on the test data set `test`(with problem ids). Notice that some features have different variable type as training data, such as: `magnet_dumbbell_z`,`magnet_forearm_y`,`magnet_forearm_z`, and `cvtd_timestamp`. We need to convert them to the same type then apply our model to predict. 
+
+The result shows that using random forest on the whole set of data (corresponding to the `modFit`), and using random forest on selected features of data (corresponding to the `modFitS`), yield the same prediction result on the `finalTest` data set. They both passed the final test.
+
+
+
+
+
+
+
+
